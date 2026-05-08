@@ -1,7 +1,8 @@
 # config.yaml
 
-# Text-to-Image settings
+# Text-to-Image settings (for synthetic image generation)
 text2image:
+  enabled: true
   model: "stabilityai/stable-diffusion-2-1" # Default model
   # provider: "replicate"                   # Uncomment to use a specific provider
   image_width: 768
@@ -21,6 +22,15 @@ text2image:
 variations:
   weather: ["summer", "winter", "rainy", "cloudy"]
 
+# Hugging Face image datasets to use as source images
+# Images are randomly sampled and processed through task generators
+hf_img_datasets:
+  - enabled: true
+    name: "RESISC45"
+    repo_id: "blanchon/RESISC45"
+    split: "train"
+    image_column: "image"
+
 # Vision models for metadata extraction
 vision:
   image_text_to_text_model: "microsoft/git-base-vqa"
@@ -28,7 +38,7 @@ vision:
   tasks:
     caption: true
     vqa: true
-    segmentation: true
+    segmentation: false
 
 # Dataset upload settings
 upload:
@@ -46,3 +56,6 @@ output:
   caption_path: "output/captions.jsonl"
   vqa_path: "output/vqa.jsonl"
   segmentation_path: "output/segmentation.jsonl"
+  caption_count: 50
+  vqa_count: 50
+  segmentation_count: 50

@@ -80,3 +80,8 @@ Edit the prompts or swap models to tailor the synthetic data to your needs.
 ## License & Contributions
 
 Feel free to fork, adapt, and contribute back via pull requests.  The code is released under the MIT license.
+
+
+## Reference
+
+- https://huggingface.co/docs/inference-providers/tasks/index

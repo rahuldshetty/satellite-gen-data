@@ -47,7 +47,7 @@ def build_task_dataset(image_dir: str, jsonl_path: str, task_type: str) -> Datas
         features_dict["question"] = Value("string")
         features_dict["answer"] = Value("string")
     elif task_type == "segmentation":
-        features_dict["segmentation_mask"] = Value("string", nullable=True)
+        features_dict["segmentation_mask"] = Value("string")
 
     # Convert metadata dict to JSON string
     for rec in records:

@@ -69,13 +69,75 @@ class VisionClient:
         )
         return completion.choices[0].message.content
 
-    def caption(self, image_path: Union[str, Path, bytes]) -> str:
-        """Generates a caption for an image using image-text-to-text task."""
-        return self._chat(image_path, "Describe this image in one sentence.")
+    def caption(self, image_path: Union[str, Path, bytes], num: int = 1) -> list:
+        """Generate N different captions for an image.
 
-    def vqa(self, image_path: Union[str, Path, bytes], question: str) -> str:
-        """Performs Visual Question Answering using image-text-to-text task."""
-        return self._chat(image_path, question)
+        Returns a list of caption strings.
+        """
+        b64 = _image_to_base64(image_path)
+        prompt = (
+            "You are a satellite imagery captioning assistant. "
+            "Look at the image carefully and generate a concise, descriptive caption. "
+            "Focus on what is visible: landscapes, structures, terrain, water, vegetation, etc."
+        )
+        completion = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": b64}},
+                    ],
+                }
+            ],
+            temperature=0.7 + (0.1 * num),  # increase creativity per sample
+            n=num,
+        )
+        return [choice.message.content for choice in completion.choices]
+
+    def vqa(self, image_path: Union[str, Path, bytes], num: int = 1) -> list:
+        """Generate N Q&A pairs for an image.
+
+        The model acts as a VQA generator: it creates both questions and answers
+        about the image content.
+
+        Returns a list of dicts: [{"question": "...", "answer": "..."}, ...]
+        """
+        b64 = _image_to_base64(image_path)
+        prompt = (
+            "You are a VQA (Visual Question Answering) dataset generator. "
+            "Look at the image and generate exactly the requested number of diverse Q&A pairs. "
+            "Each pair should ask something specific about the image and provide a factual answer. "
+            "Vary the questions: ask about objects, colors, layout, relationships, weather, etc. "
+            "Output format: a JSON array of objects with 'question' and 'answer' keys. "
+            "Example: [{\"question\": \"What is in the center?\", \"answer\": \"A runway\"}]"
+        )
+        completion = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": b64}},
+                    ],
+                }
+            ],
+            temperature=0.8,
+            n=1,
+        )
+        response = completion.choices[0].message.content
+        # Try to parse JSON array from response
+        try:
+            import json
+            pairs = json.loads(response)
+            if isinstance(pairs, list) and len(pairs) >= num:
+                return pairs[:num]
+        except (json.JSONDecodeError, ValueError):
+            pass
+        # Fallback: create a single Q&A from the text response
+        return [{"question": "What is in this image?", "answer": response.strip()}]
 
     def segment(self, image_path: Union[str, Path, bytes]) -> Any:
         """Performs image segmentation."""
