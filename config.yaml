@@ -1,0 +1,39 @@
+# config.yaml
+
+# Text-to-Image settings
+text2image:
+  model: "stabilityai/stable-diffusion-2-1" # Default model
+  # provider: "replicate"                   # Uncomment to use a specific provider
+  image_width: 768
+  image_height: 768
+  scenarios:
+    - name: "airport"
+      prompt: "A high-resolution satellite view of a busy international airport during {weather}, clear sky, realistic lighting"
+    - name: "city"
+      prompt: "A detailed aerial image of a modern city with skyscrapers, roads, and a river, captured from space during {weather}"
+    - name: "crop_field"
+      prompt: "An overhead view of expansive agricultural crop fields with rows, bright green vegetation, clear weather during {weather}"
+
+# Variations for placeholders
+variations:
+  weather: ["summer", "winter", "rainy", "cloudy"]
+
+# Vision models for metadata extraction
+vision:
+  caption_model: "google/vit-gpt2-image-captioning"
+  segmentation_model: "facebook/detectron2"
+  detection_model: "microsoft/git-base-vqa"
+
+# Dataset upload settings
+upload:
+  repo_id: "your-username/satellite-dataset"
+  private: false
+  tags:
+    - "satellite"
+    - "synthetic"
+    - "image"
+
+# Output settings
+output:
+  image_dir: "output/images"
+  metadata_path: "output/metadata.jsonl"
