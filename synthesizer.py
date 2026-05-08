@@ -112,7 +112,7 @@ def _run_vqa_task(images: List[Dict], itt2t_client: VisionClient, scenario_name:
     print(f"  Wrote {len(images)} VQA records -> {vqa_path}")
 
 
-def _run_segmentation_task(images: List[Dict], seg_client: VisionClient, scenario_name: str, seg_path: Path) -> None:
+def _run_segmentation_task(images: List[Dict], seg_client: VisionClient, scenario_name: str, seg_path: Path, output_cfg: dict) -> None:
     """Run segmentation on all images and write separate JSONL."""
     for img_info in images:
         seg_results = seg_client.segment(img_info["path"])
@@ -167,7 +167,7 @@ def process_scenario(scenario: dict, txt2img_cfg: dict, vision_cfg: dict, variat
         seg_model = vision_cfg.get("segmentation_model")
         seg_client = VisionClient(model=seg_model) if seg_model else None
         if seg_client:
-            _run_segmentation_task(images, seg_client, scenario_name, Path(output_cfg["segmentation_path"]))
+            _run_segmentation_task(images, seg_client, scenario_name, Path(output_cfg["segmentation_path"]), output_cfg)
 
 
 def run_pipeline(config_path: str = "config.yaml", num_per_scenario: int = 5) -> None:
