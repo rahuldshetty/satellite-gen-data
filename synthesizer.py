@@ -6,6 +6,7 @@ from typing import List, Dict, Union
 
 from PIL import Image
 from datasets import load_dataset
+from huggingface_hub import list_repo_files
 from hf_client import Text2ImageClient, VisionClient
 
 
@@ -50,16 +51,35 @@ def _apply_variations(prompt: str, variations: dict) -> str:
     return result
 
 
-def _load_hf_images(hf_cfg: dict, count: int) -> List[Dict]:
-    """Load and randomly sample images from a Hugging Face dataset using streaming."""
+def _load_hf_images(hf_cfg: dict, count: int, output_cfg: dict) -> List[Dict]:
+    """Load and randomly sample images from a Hugging Face dataset using streaming.
+
+    Prefers parquet files from refs/convert/parquet for efficient streaming.
+    Falls back to default streaming if parquet files aren't available.
+    """
     repo_id = hf_cfg["repo_id"]
     split = hf_cfg.get("split", "train")
     image_column = hf_cfg.get("image_column", "image")
     name = hf_cfg.get("name", repo_id.split("/")[-1])
 
-    print(f"  Streaming HF dataset: {repo_id} (split={split}, column={image_column})")
-    # Use streaming to avoid downloading the full dataset
-    ds = load_dataset(repo_id, split=split, streaming=True, trust_remote_code=True)
+    # Check for parquet files (refs/convert/parquet) for efficient streaming
+    parquet_files = [
+        f for f in list_repo_files(repo_id, repo_type="dataset")
+        if f.startswith("refs/convert/parquet/") and f.endswith(".parquet")
+    ]
+
+    if parquet_files:
+        print(f"  Using parquet streaming: {len(parquet_files)} files from refs/convert/parquet")
+        ds = load_dataset(
+            repo_id,
+            data_files={"train": parquet_files},
+            split=split,
+            streaming=True,
+            trust_remote_code=True,
+        )
+    else:
+        print(f"  Streaming HF dataset: {repo_id} (split={split}, column={image_column})")
+        ds = load_dataset(repo_id, split=split, streaming=True, trust_remote_code=True)
 
     # Shuffle and select only the images we need (lazy loading)
     shuffled = ds.shuffle(seed=random.randint(0, 2**31))
@@ -241,7 +261,7 @@ def process_hf_datasets(hf_datasets: list, output_cfg: dict, vision_cfg: dict, t
         num_images = max(counts) if counts else 50
 
         print(f"\nProcessing HF dataset: {dataset_name}")
-        images = _load_hf_images(hf_cfg, num_images)
+        images = _load_hf_images(hf_cfg, num_images, output_cfg)
 
         if do_caption:
             _run_caption_task(images, itt2t_client, Path(output_cfg["caption_path"]))
