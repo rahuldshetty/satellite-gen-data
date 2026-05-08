@@ -8,10 +8,13 @@ text2image:
   image_height: 768
   scenarios:
     - name: "airport"
+      enabled: true
       prompt: "A high-resolution satellite view of a busy international airport during {weather}, clear sky, realistic lighting"
     - name: "city"
+      enabled: true
       prompt: "A detailed aerial image of a modern city with skyscrapers, roads, and a river, captured from space during {weather}"
     - name: "crop_field"
+      enabled: true
       prompt: "An overhead view of expansive agricultural crop fields with rows, bright green vegetation, clear weather during {weather}"
 
 # Variations for placeholders
@@ -20,12 +23,16 @@ variations:
 
 # Vision models for metadata extraction
 vision:
-  caption_model: "google/vit-gpt2-image-captioning"
+  image_text_to_text_model: "microsoft/git-base-vqa"
   segmentation_model: "facebook/detectron2"
-  detection_model: "microsoft/git-base-vqa"
+  tasks:
+    caption: true
+    vqa: true
+    segmentation: true
 
 # Dataset upload settings
 upload:
+  enabled: true
   repo_id: "your-username/satellite-dataset"
   private: false
   tags:
@@ -36,4 +43,6 @@ upload:
 # Output settings
 output:
   image_dir: "output/images"
-  metadata_path: "output/metadata.jsonl"
+  caption_path: "output/captions.jsonl"
+  vqa_path: "output/vqa.jsonl"
+  segmentation_path: "output/segmentation.jsonl"

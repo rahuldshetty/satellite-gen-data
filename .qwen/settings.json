@@ -1,0 +1,29 @@
+{
+  "env": {
+    "OPENAI_API_KEY": "test"
+  },
+  "modelProviders": {
+    "openai": [
+      {
+        "id": "local-qwen",
+        "name": "Local Qwen",
+        "baseUrl": "http://127.0.0.1:8080",
+        "envKey": "OPENAI_API_KEY"
+      }
+    ]
+  },
+  "$version": 3,
+  "model": {
+    "name": "local-qwen"
+  },
+  "security": {
+    "auth": {
+      "selectedType": "openai"
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python *)"
+    ]
+  }
+}

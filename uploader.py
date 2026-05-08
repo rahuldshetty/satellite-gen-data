@@ -1,16 +1,17 @@
 import os
 import json
+import shutil
 from pathlib import Path
 from typing import List
 
-from huggingface_hub import Repository, HfApi, create_commit, upload_folder
-from datasets import Dataset, DatasetDict, Features, Image, Value
+from huggingface_hub import HfApi, upload_folder
+from datasets import Dataset, Features, Image, Value
 
 
-def load_metadata(metadata_path: str) -> List[dict]:
-    """Load metadata records from a JSONL file."""
+def load_jsonl(jsonl_path: str) -> List[dict]:
+    """Load records from a JSONL file."""
     records = []
-    with open(metadata_path, "r", encoding="utf-8") as f:
+    with open(jsonl_path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -18,28 +19,41 @@ def load_metadata(metadata_path: str) -> List[dict]:
     return records
 
 
-def build_dataset(image_dir: str, metadata_path: str) -> Dataset:
-    """Create a `datasets.Dataset` where each example contains the image and its metadata.
+def build_task_dataset(image_dir: str, jsonl_path: str, task_type: str) -> Dataset:
+    """Create a `datasets.Dataset` for a specific task type.
 
-    The image column uses the `Image` feature type, allowing automatic loading of image files.
+    Each task has different fields, so features are built dynamically.
     """
-    records = load_metadata(metadata_path)
+    records = load_jsonl(jsonl_path)
+    if not records:
+        print(f"  No records found in {jsonl_path}")
+        return None
+
     # Resolve absolute image paths
     for rec in records:
-        rec["image"] = os.path.abspath(rec["image_path"])  # rename for HF Image feature
-    features = Features({
+        rec["image"] = os.path.abspath(rec["image_path"])
+
+    # Build features based on task type
+    features_dict = {
         "scenario": Value("string"),
         "prompt": Value("string"),
         "image": Image(),
-        "caption": Value("string"),
-        "vqa_answer": Value("string"),
-        "segmentation_mask": Value("string", nullable=True),
-        "metadata": Value("string"),  # store as JSON string for simplicity
-    })
+        "metadata": Value("string"),
+    }
+
+    if task_type == "caption":
+        features_dict["caption"] = Value("string")
+    elif task_type == "vqa":
+        features_dict["question"] = Value("string")
+        features_dict["answer"] = Value("string")
+    elif task_type == "segmentation":
+        features_dict["segmentation_mask"] = Value("string", nullable=True)
+
     # Convert metadata dict to JSON string
     for rec in records:
         rec["metadata"] = json.dumps(rec.get("metadata", {}))
-    return Dataset.from_dict({k: [r[k] for r in records] for k in records[0].keys()}, features=features)
+
+    return Dataset.from_dict({k: [r[k] for r in records] for k in features_dict.keys()}, features=Features(features_dict))
 
 
 def push_dataset_to_hub(
@@ -48,32 +62,21 @@ def push_dataset_to_hub(
     token: str,
     private: bool = False,
     tags: List[str] | None = None,
-    commit_message: str = "Add synthetic satellite dataset",
-) -> None:
+    commit_message: str = "Add dataset",
+    repo_suffix: str = "",
+) -> str:
     """Upload a `datasets.Dataset` to the Hugging Face Hub.
 
-    Parameters
-    ----------
-    repo_id: str
-        The identifier of the repository, e.g. ``username/dataset-name``.
-    dataset: Dataset
-        The dataset object to upload.
-    token: str
-        HF access token with write permissions.
-    private: bool
-        Whether the repo should be private.
-    tags: List[str] | None
-        Optional list of tags to attach to the repo.
-    commit_message: str
-        Message for the initial commit.
+    Returns the full dataset URL.
     """
     api = HfApi(token=token)
+    full_repo_id = f"{repo_id}{repo_suffix}" if repo_suffix else repo_id
+
     # Create the repo if it does not exist
-    if not api.repo_exists(repo_id, repo_type="dataset"):
-        api.create_repo(repo_id=repo_id, token=token, private=private, repo_type="dataset", exist_ok=True)
+    if not api.repo_exists(full_repo_id, repo_type="dataset"):
+        api.create_repo(repo_id=full_repo_id, token=token, private=private, repo_type="dataset", exist_ok=True)
         if tags:
-            api.update_repo_visibility(repo_id=repo_id, private=private, repo_type="dataset")
-            api.add_tags(repo_id, tags=tags, repo_type="dataset")
+            api.add_tags(full_repo_id, tags=tags, repo_type="dataset")
 
     # Save dataset locally in a temporary folder
     tmp_dir = Path(".temp_hf_dataset")
@@ -82,15 +85,16 @@ def push_dataset_to_hub(
 
     # Upload the whole folder
     upload_folder(
-        repo_id=repo_id,
+        repo_id=full_repo_id,
         folder_path=str(tmp_dir),
         token=token,
         repo_type="dataset",
         commit_message=commit_message,
     )
-    # Clean up temporary directory
-    import shutil
     shutil.rmtree(tmp_dir)
+
+    return f"https://huggingface.co/datasets/{full_repo_id}"
+
 
 if __name__ == "__main__":
     import argparse
@@ -112,16 +116,47 @@ if __name__ == "__main__":
     upload_cfg = cfg.get("upload", {})
     output_cfg = cfg.get("output", {})
 
-    ds = build_dataset(
-        image_dir=output_cfg.get("image_dir", "output/images"),
-        metadata_path=output_cfg.get("metadata_path", "output/metadata.jsonl"),
-    )
-    push_dataset_to_hub(
-        repo_id=upload_cfg.get("repo_id"),
-        dataset=ds,
-        token=HF_TOKEN,
-        private=upload_cfg.get("private", False),
-        tags=upload_cfg.get("tags", []),
-    )
+    if not upload_cfg.get("enabled", True):
+        print("Upload is disabled in config. Skipping.")
+        exit(0)
 
-    print(f"Dataset successfully uploaded to https://huggingface.co/datasets/{upload_cfg.get('repo_id')}")
+    repo_id = upload_cfg.get("repo_id")
+    private = upload_cfg.get("private", False)
+    tags = upload_cfg.get("tags", [])
+
+    # Define task datasets to upload
+    tasks = {
+        "caption": output_cfg.get("caption_path"),
+        "vqa": output_cfg.get("vqa_path"),
+        "segmentation": output_cfg.get("segmentation_path"),
+    }
+
+    image_dir = output_cfg.get("image_dir", "output/images")
+
+    uploaded = []
+    for task_type, jsonl_path in tasks.items():
+        if not jsonl_path or not os.path.exists(jsonl_path):
+            print(f"Skipping {task_type}: {jsonl_path} not found")
+            continue
+
+        print(f"\nBuilding {task_type} dataset from {jsonl_path}...")
+        ds = build_task_dataset(image_dir, jsonl_path, task_type)
+        if ds is None:
+            continue
+
+        url = push_dataset_to_hub(
+            repo_id=repo_id,
+            dataset=ds,
+            token=HF_TOKEN,
+            private=private,
+            tags=tags,
+            commit_message=f"Add {task_type} dataset",
+            repo_suffix=f"-{task_type}",
+        )
+        uploaded.append(url)
+        print(f"  Uploaded: {url}")
+
+    if uploaded:
+        print(f"\n{len(uploaded)} dataset(s) uploaded successfully.")
+    else:
+        print("No datasets to upload.")
